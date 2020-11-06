@@ -228,9 +228,6 @@ func (s *DefaultSquidTransport) CheckForAllSubNet(ip string) bool {
 // Получает на вход строку в виде лога Squid по-умолчанию
 // Фильтрует от лишних записей по вхождению строк из списка в конфиге
 func (s *DefaultSquidTransport) RemoveIgnoringLine(line string) string {
-	// if strings.Contains(line, ":3128 ") || strings.Contains(line, "192.168.65.155") {
-	// 	log.Error(line)
-	// }
 	for _, ignorItem := range s.IgnorList { //проходим по списку исключения,
 		if strings.Contains(line, ignorItem) { //если линия содержит хотя бы один объект из списка,
 			return "" // то мы её игнорируем и возвращаем ничего
@@ -251,73 +248,6 @@ func checkIP(subnet, ip string) (bool, error) {
 
 	return netA.Contains(ipv4addr), nil
 }
-
-// func checkIP(subnet, ip string) (bool, error) {
-// 	var (
-// 		maskSubnetTmpl, ipInt64, subnetInt64 int64
-// 		maskSubnet                           int
-// 		err                                  error
-// 	)
-// 	maskSubnetTmpl, err = inetAton(net.ParseIP("255.255.255.255"))
-// 	if err != nil {
-// 		return false, err
-// 	}
-// 	// переод маски /32 в int64
-// 	ipInt64, err = inetAton(net.ParseIP(ip))
-// 	if err != nil {
-// 		return false, err
-// 	}
-// 	maskSubnetArray := strings.Split(subnet, "/")                // разбиваю входные данные на подсеть и маску
-// 	subnetInt64, err = inetAton(net.ParseIP(maskSubnetArray[0])) // подсеть в int64
-// 	if err != nil {
-// 		return false, err
-// 	}
-// 	// maskSubnetStr := strings.Split(subnet, "/")[1] //
-// 	maskSubnet, err = strconv.Atoi(maskSubnetArray[1]) // маска в виде Int для проведения битового сдвига
-// 	if err != nil {
-// 		return false, err
-// 	}
-// 	maskSubnetBytes := maskSubnetTmpl << (32 - maskSubnet) // сдвигаю маску /32 на оставшееся количество бит после маски
-// 	if subnetInt64 == (ipInt64 & maskSubnetBytes) {        // Проверка на хождение в подсеть IP-адреса
-// 		return true, nil
-// 	}
-// 	return false, nil
-// }
-
-// Convert net.IP to int64
-// https://groups.google.com/forum/#!topic/golang-nuts/v4eJ5HK3stI
-// func inetAton(ipnr net.IP) (int64, error) {
-// 	bits := strings.Split(ipnr.String(), ".")
-// 	var (
-// 		b0, b1, b2, b3 int
-// 		err            error
-// 	)
-// 	b0, err = strconv.Atoi(bits[0])
-// 	if err != nil {
-// 		return int64(0), err
-// 	}
-// 	b1, err = strconv.Atoi(bits[1])
-// 	if err != nil {
-// 		return int64(0), err
-// 	}
-// 	b2, err = strconv.Atoi(bits[2])
-// 	if err != nil {
-// 		return int64(0), err
-// 	}
-// 	b3, err = strconv.Atoi(bits[3])
-// 	if err != nil {
-// 		return int64(0), err
-// 	}
-
-// 	var sum int64
-
-// 	sum += int64(b0) << 24
-// 	sum += int64(b1) << 16
-// 	sum += int64(b2) << 8
-// 	sum += int64(b3)
-
-// 	return sum, nil
-// }
 
 func (s *DefaultSquidTransport) LogFileFiltering(line string) string {
 	var destIP, destPort, srcPort string
