@@ -1,8 +1,9 @@
 package utils
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDecodeFlowExpandedSFlow(t *testing.T) {
@@ -13,7 +14,7 @@ func TestDecodeFlowExpandedSFlow(t *testing.T) {
 	}
 
 	s := &StateSFlow{
-		Transport: &DefaultLogTransport{},
+		Transport: &DefaultSquidTransport{},
 	}
 
 	assert.Nil(t, s.DecodeFlow(msg))

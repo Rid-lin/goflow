@@ -1,92 +1,49 @@
-EXTENSION ?= 
-DIST_DIR ?= dist/
-GOOS ?= linux
-ARCH ?= $(shell uname -m)
-BUILDINFOSDET ?= 
+PWD := $(shell pwd)
+VERSION := $(shell git describe --tags)
+BUILD := $(shell git rev-parse --short HEAD)
+PROJECTNAME := $(shell basename $(PWD))
+GOOS := linux
+GOARCH := amd64
+TAG := $(VERSION)_$(GOOS)_$(GOARCH)
+PLATFORMS=darwin linux windows
+ARCHITECTURES=386 amd64
 
-DOCKER_REPO   := cloudflare/
-GOFLOW_NAME    := goflow
-GOFLOW_VERSION := $(shell git describe --tags $(git rev-list --tags --max-count=1))
-VERSION_PKG   := $(shell echo $(GOFLOW_VERSION) | sed 's/^v//g')
-ARCH          := x86_64
-LICENSE       := BSD-3
-URL           := https://github.com/cloudflare/goflow
-DESCRIPTION   := GoFlow: an sFlow/IPFIX/NetFlow v9/v5 collector to Kafka
-BUILDINFOS    :=  ($(shell date +%FT%T%z)$(BUILDINFOSDET))
-LDFLAGS       := '-X main.version=$(GOFLOW_VERSION) -X main.buildinfos=$(BUILDINFOS)'
+# Use linker flags to provide version/build settings
+# LDFLAGS=-ldflags "-w -s -X=main.Version=$(VERSION) -X=main.Build=$(BUILD)"
+LDFLAGS=-ldflags "-w -s"
 
-OUTPUT_GOFLOW := $(DIST_DIR)goflow-$(GOFLOW_VERSION)-$(GOOS)-$(ARCH)$(EXTENSION)
+.PHONY: build
 
-OUTPUT_GOFLOW_LIGHT_SFLOW := $(DIST_DIR)goflow-sflow-$(GOFLOW_VERSION)-$(GOOS)-$(ARCH)$(EXTENSION)
-OUTPUT_GOFLOW_LIGHT_NF    := $(DIST_DIR)goflow-netflow-$(GOFLOW_VERSION)-$(GOOS)-$(ARCH)$(EXTENSION)
-OUTPUT_GOFLOW_LIGHT_NFV5  := $(DIST_DIR)goflow-nflegacy-$(GOFLOW_VERSION)-$(GOOS)-$(ARCH)$(EXTENSION)
+build: buildwithoutdebug_linux pack
 
-.PHONY: all
-all: test-race vet test
+buildfordebug:
+	go build -o build/$(PROJECTNAME)_$(TAG).exe -v ./
 
-.PHONY: proto
-proto:
-	@echo generating protobuf
-	protoc --go_out=. --plugin=$(PROTOCPATH)protoc-gen-go pb/*.proto
+buildwithoutdebug:
+	go build $(LDFLAGS) -o build/$(PROJECTNAME)_$(TAG).exe -v ./
 
-.PHONY: test
-test:
-	@echo testing code
-	go test ./...
+buildwodebug_linux:
+	set GOOS=linux&& go build $(LDFLAGS) -o build/$(PROJECTNAME)_$(TAG) -v ./cmd/cnetflow/
 
-.PHONY: vet
-vet:
-	@echo checking code is vetted
-	go vet $(shell go list ./...)
+buildwithoutdebug_linux:
+	@set GOARCH=$(GOARCH)&&set GOOS=$(GOOS)
+	@go build $(LDFLAGS) -o build/$(PROJECTNAME)_$(VERSION)_$(GOOS)_$(GOARCH) -v ./cmd/cnetflow/
 
-.PHONY: test-race
-test-race:
-	@echo testing code for races
-	go test -race ./...
+prebuild_all:
+	$(foreach GOOS, $(PLATFORMS),\
+	$(foreach GOARCH, $(ARCHITECTURES), $(shell export GOOS=$(GOOS); export GOARCH=$(GOARCH); go build -v $(LDFLAGS) -o build/$(PROJECTNAME)_$(VERSION)_$(GOOS)_$(GOARCH) -v ./cmd/cnetflow/)))
 
-.PHONY: prepare
-prepare:
-	mkdir -p $(DIST_DIR)
+build_all: prebuild_all pack
 
-.PHONY: clean
-clean:
-	rm -rf $(DIST_DIR)
+run: build
+	build/$(PROJECTNAME)_$(TAG).exe
+	
+.DUFAULT_GOAL := build
 
-.PHONY: build-goflow
-build-goflow: prepare
-	go build -ldflags $(LDFLAGS) -o $(OUTPUT_GOFLOW) cmd/goflow/goflow.go
+pack:
+	upx --ultra-brute build/$(PROJECTNAME)*
 
-.PHONY: build-goflow-light
-build-goflow-light: prepare
-	go build -ldflags $(LDFLAGS) -o $(OUTPUT_GOFLOW_LIGHT_SFLOW) cmd/csflow/csflow.go
-	go build -ldflags $(LDFLAGS) -o $(OUTPUT_GOFLOW_LIGHT_NF) cmd/cnetflow/cnetflow.go
-	go build -ldflags $(LDFLAGS) -o $(OUTPUT_GOFLOW_LIGHT_NFV5) cmd/cnflegacy/cnflegacy.go
-
-.PHONY: docker-goflow
-docker-goflow:
-	docker build -t $(DOCKER_REPO)$(GOFLOW_NAME):$(GOFLOW_VERSION) --build-arg LDFLAGS=$(LDFLAGS) -f Dockerfile .
-
-.PHONY: package-deb-goflow
-package-deb-goflow: prepare
-	fpm -s dir -t deb -n $(GOFLOW_NAME) -v $(VERSION_PKG) \
-        --description "$(DESCRIPTION)"  \
-        --url "$(URL)" \
-        --architecture $(ARCH) \
-        --license "$(LICENSE)" \
-       	--deb-no-default-config-files \
-        --package $(DIST_DIR) \
-        $(OUTPUT_GOFLOW)=/usr/bin/goflow \
-        package/goflow.service=/lib/systemd/system/goflow.service \
-        package/goflow.env=/etc/default/goflow
-
-.PHONY: package-rpm-goflow
-package-rpm-goflow: prepare
-	fpm -s dir -t rpm -n $(GOFLOW_NAME) -v $(VERSION_PKG) \
-        --description "$(DESCRIPTION)" \
-        --url "$(URL)" \
-        --architecture $(ARCH) \
-        --license "$(LICENSE) "\
-        --package $(DIST_DIR) \
-        $(OUTPUT_GOFLOW)=/usr/bin/goflow \
-        package/goflow.service=/lib/systemd/system/goflow.service \
-        package/goflow.env=/etc/default/goflow
+mod:
+	go mod tidy
+	go mod download
+	go mod vendor

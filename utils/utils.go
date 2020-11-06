@@ -2,7 +2,6 @@ package utils
 
 import (
 	"encoding/binary"
-	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -15,6 +14,7 @@ import (
 	flowmessage "github.com/cloudflare/goflow/v3/pb"
 	reuseport "github.com/libp2p/go-reuseport"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/log"
 )
 
 const defaultFields = "Type,TimeReceived,SequenceNum,SamplingRate,SamplerAddress,TimeFlowStart,TimeFlowEnd,Bytes,Packets,SrcAddr,DstAddr,Etype,Proto,SrcPort,DstPort,InIf,OutIf,SrcMac,DstMac,SrcVlan,DstVlan,VlanId,IngressVrfID,EgressVrfID,IPTos,ForwardingStatus,IPTTL,TCPFlags,IcmpType,IcmpCode,IPv6FlowLabel,FragmentId,FragmentOffset,BiFlowDirection,SrcAS,DstAS,NextHop,NextHopAS,SrcNet,DstNet,HasEncap,SrcAddrEncap,DstAddrEncap,ProtoEncap,EtypeEncap,IPTosEncap,IPTTLEncap,IPv6FlowLabelEncap,FragmentIdEncap,FragmentOffsetEncap,HasMPLS,MPLSCount,MPLS1TTL,MPLS1Label,MPLS2TTL,MPLS2Label,MPLS3TTL,MPLS3Label,MPLSLastTTL,MPLSLastLabel,HasPPP,PPPAddressControl"
@@ -26,7 +26,7 @@ var (
 func GetServiceAddresses(srv string) (addrs []string, err error) {
 	_, srvs, err := net.LookupSRV("", "", srv)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Service discovery: %v\n", err))
+		return nil, fmt.Errorf("Service discovery: %v\n", err)
 	}
 	for _, srv := range srvs {
 		addrs = append(addrs, net.JoinHostPort(srv.Target, strconv.Itoa(int(srv.Port))))
@@ -57,32 +57,29 @@ type BaseMessage struct {
 
 type Transport interface {
 	Publish([]*flowmessage.FlowMessage)
-}
-
-type DefaultLogTransport struct {
-}
-
-func (s *DefaultLogTransport) Publish(msgs []*flowmessage.FlowMessage) {
-	for _, msg := range msgs {
-		fmt.Printf("%v\n", FlowMessageToString(msg))
-	}
-}
-
-type DefaultJSONTransport struct {
-}
-
-func (s *DefaultJSONTransport) Publish(msgs []*flowmessage.FlowMessage) {
-	for _, msg := range msgs {
-		fmt.Printf("%v\n", FlowMessageToJSON(msg))
-	}
+	CheckForAllSubNet(ip string) bool
+	RemoveIgnoringLine(line string) string
 }
 
 type DefaultSquidTransport struct {
+	SubNets             []string
+	IgnorList           []string
+	ProcessingDirection *string
 }
 
 func (s *DefaultSquidTransport) Publish(msgs []*flowmessage.FlowMessage) {
 	for _, msg := range msgs {
-		fmt.Printf("%v\n", FlowMessageToSquid(msg))
+		message := FlowMessageToSquid(msg)
+		// s.CheckForAllSubNet(net.IP(msg.DstAddr).String())
+		message = s.RemoveIgnoringLine(message)
+		if message == "" {
+			continue
+		}
+		message = s.LogFileFiltering(message)
+		if message == "" {
+			continue
+		}
+		fmt.Printf("%v\n", message)
 	}
 }
 
@@ -99,175 +96,26 @@ func (cb *DefaultErrorCallback) Callback(name string, id int, start, end time.Ti
 	}
 }
 
-type flowMessageItem struct {
-	Name, Value string
-}
-
-func flowMessageFiltered(fmsg *flowmessage.FlowMessage) []flowMessageItem {
-	srcmac := make([]byte, 8)
-	dstmac := make([]byte, 8)
-	binary.BigEndian.PutUint64(srcmac, fmsg.SrcMac)
-	binary.BigEndian.PutUint64(dstmac, fmsg.DstMac)
-	srcmac = srcmac[2:8]
-	dstmac = dstmac[2:8]
-	var message []flowMessageItem
-
-	for _, field := range strings.Split(*MessageFields, ",") {
-		switch field {
-		case "Type":
-			message = append(message, flowMessageItem{"Type", fmsg.Type.String()})
-		case "TimeReceived":
-			message = append(message, flowMessageItem{"TimeReceived", fmt.Sprintf("%v", fmsg.TimeReceived)})
-		case "SequenceNum":
-			message = append(message, flowMessageItem{"SequenceNum", fmt.Sprintf("%v", fmsg.SequenceNum)})
-		case "SamplingRate":
-			message = append(message, flowMessageItem{"SamplingRate", fmt.Sprintf("%v", fmsg.SamplingRate)})
-		case "SamplerAddress":
-			message = append(message, flowMessageItem{"SamplerAddress", net.IP(fmsg.SamplerAddress).String()})
-		case "TimeFlowStart":
-			message = append(message, flowMessageItem{"TimeFlowStart", fmt.Sprintf("%v", fmsg.TimeFlowStart)})
-		case "TimeFlowEnd":
-			message = append(message, flowMessageItem{"TimeFlowEnd", fmt.Sprintf("%v", fmsg.TimeFlowEnd)})
-		case "Bytes":
-			message = append(message, flowMessageItem{"Bytes", fmt.Sprintf("%v", fmsg.Bytes)})
-		case "Packets":
-			message = append(message, flowMessageItem{"Packets", fmt.Sprintf("%v", fmsg.Packets)})
-		case "SrcAddr":
-			message = append(message, flowMessageItem{"SrcAddr", net.IP(fmsg.SrcAddr).String()})
-		case "DstAddr":
-			message = append(message, flowMessageItem{"DstAddr", net.IP(fmsg.DstAddr).String()})
-		case "Etype":
-			message = append(message, flowMessageItem{"Etype", fmt.Sprintf("%v", fmsg.Etype)})
-		case "Proto":
-			message = append(message, flowMessageItem{"Proto", fmt.Sprintf("%v", fmsg.Proto)})
-		case "SrcPort":
-			message = append(message, flowMessageItem{"SrcPort", fmt.Sprintf("%v", fmsg.SrcPort)})
-		case "DstPort":
-			message = append(message, flowMessageItem{"DstPort", fmt.Sprintf("%v", fmsg.DstPort)})
-		case "InIf":
-			message = append(message, flowMessageItem{"InIf", fmt.Sprintf("%v", fmsg.InIf)})
-		case "OutIf":
-			message = append(message, flowMessageItem{"OutIf", fmt.Sprintf("%v", fmsg.OutIf)})
-		case "SrcMac":
-			message = append(message, flowMessageItem{"SrcMac", net.HardwareAddr(srcmac).String()})
-		case "DstMac":
-			message = append(message, flowMessageItem{"DstMac", net.HardwareAddr(dstmac).String()})
-		case "SrcVlan":
-			message = append(message, flowMessageItem{"SrcVlan", fmt.Sprintf("%v", fmsg.SrcVlan)})
-		case "DstVlan":
-			message = append(message, flowMessageItem{"DstVlan", fmt.Sprintf("%v", fmsg.DstVlan)})
-		case "VlanId":
-			message = append(message, flowMessageItem{"VlanId", fmt.Sprintf("%v", fmsg.VlanId)})
-		case "IngressVrfID":
-			message = append(message, flowMessageItem{"IngressVrfID", fmt.Sprintf("%v", fmsg.IngressVrfID)})
-		case "EgressVrfID":
-			message = append(message, flowMessageItem{"EgressVrfID", fmt.Sprintf("%v", fmsg.EgressVrfID)})
-		case "IPTos":
-			message = append(message, flowMessageItem{"IPTos", fmt.Sprintf("%v", fmsg.IPTos)})
-		case "ForwardingStatus":
-			message = append(message, flowMessageItem{"ForwardingStatus", fmt.Sprintf("%v", fmsg.ForwardingStatus)})
-		case "IPTTL":
-			message = append(message, flowMessageItem{"IPTTL", fmt.Sprintf("%v", fmsg.IPTTL)})
-		case "TCPFlags":
-			message = append(message, flowMessageItem{"TCPFlags", fmt.Sprintf("%v", fmsg.TCPFlags)})
-		case "IcmpType":
-			message = append(message, flowMessageItem{"IcmpType", fmt.Sprintf("%v", fmsg.IcmpType)})
-		case "IcmpCode":
-			message = append(message, flowMessageItem{"IcmpCode", fmt.Sprintf("%v", fmsg.IcmpCode)})
-		case "IPv6FlowLabel":
-			message = append(message, flowMessageItem{"IPv6FlowLabel", fmt.Sprintf("%v", fmsg.IPv6FlowLabel)})
-		case "FragmentId":
-			message = append(message, flowMessageItem{"FragmentId", fmt.Sprintf("%v", fmsg.FragmentId)})
-		case "FragmentOffset":
-			message = append(message, flowMessageItem{"FragmentOffset", fmt.Sprintf("%v", fmsg.FragmentOffset)})
-		case "BiFlowDirection":
-			message = append(message, flowMessageItem{"BiFlowDirection", fmt.Sprintf("%v", fmsg.BiFlowDirection)})
-		case "SrcAS":
-			message = append(message, flowMessageItem{"SrcAS", fmt.Sprintf("%v", fmsg.SrcAS)})
-		case "DstAS":
-			message = append(message, flowMessageItem{"DstAS", fmt.Sprintf("%v", fmsg.DstAS)})
-		case "NextHop":
-			message = append(message, flowMessageItem{"NextHop", net.IP(fmsg.NextHop).String()})
-		case "NextHopAS":
-			message = append(message, flowMessageItem{"NextHopAS", fmt.Sprintf("%v", fmsg.NextHopAS)})
-		case "SrcNet":
-			message = append(message, flowMessageItem{"SrcNet", fmt.Sprintf("%v", fmsg.SrcNet)})
-		case "DstNet":
-			message = append(message, flowMessageItem{"DstNet", fmt.Sprintf("%v", fmsg.DstNet)})
-		case "HasEncap":
-			message = append(message, flowMessageItem{"HasEncap", fmt.Sprintf("%v", fmsg.HasEncap)})
-		case "SrcAddrEncap":
-			message = append(message, flowMessageItem{"SrcAddrEncap", net.IP(fmsg.SrcAddrEncap).String()})
-		case "DstAddrEncap":
-			message = append(message, flowMessageItem{"DstAddrEncap", net.IP(fmsg.DstAddrEncap).String()})
-		case "ProtoEncap":
-			message = append(message, flowMessageItem{"ProtoEncap", fmt.Sprintf("%v", fmsg.ProtoEncap)})
-		case "EtypeEncap":
-			message = append(message, flowMessageItem{"EtypeEncap", fmt.Sprintf("%v", fmsg.EtypeEncap)})
-		case "IPTosEncap":
-			message = append(message, flowMessageItem{"IPTosEncap", fmt.Sprintf("%v", fmsg.IPTosEncap)})
-		case "IPTTLEncap":
-			message = append(message, flowMessageItem{"IPTTLEncap", fmt.Sprintf("%v", fmsg.IPTTLEncap)})
-		case "IPv6FlowLabelEncap":
-			message = append(message, flowMessageItem{"IPv6FlowLabelEncap", fmt.Sprintf("%v", fmsg.IPv6FlowLabelEncap)})
-		case "FragmentIdEncap":
-			message = append(message, flowMessageItem{"FragmentIdEncap", fmt.Sprintf("%v", fmsg.FragmentIdEncap)})
-		case "FragmentOffsetEncap":
-			message = append(message, flowMessageItem{"FragmentOffsetEncap", fmt.Sprintf("%v", fmsg.FragmentOffsetEncap)})
-		case "HasMPLS":
-			message = append(message, flowMessageItem{"HasMPLS", fmt.Sprintf("%v", fmsg.HasMPLS)})
-		case "MPLSCount":
-			message = append(message, flowMessageItem{"MPLSCount", fmt.Sprintf("%v", fmsg.MPLSCount)})
-		case "MPLS1TTL":
-			message = append(message, flowMessageItem{"MPLS1TTL", fmt.Sprintf("%v", fmsg.MPLS1TTL)})
-		case "MPLS1Label":
-			message = append(message, flowMessageItem{"MPLS1Label", fmt.Sprintf("%v", fmsg.MPLS1Label)})
-		case "MPLS2TTL":
-			message = append(message, flowMessageItem{"MPLS2TTL", fmt.Sprintf("%v", fmsg.MPLS2TTL)})
-		case "MPLS2Label":
-			message = append(message, flowMessageItem{"MPLS2Label", fmt.Sprintf("%v", fmsg.MPLS2Label)})
-		case "MPLS3TTL":
-			message = append(message, flowMessageItem{"MPLS3TTL", fmt.Sprintf("%v", fmsg.MPLS3TTL)})
-		case "MPLS3Label":
-			message = append(message, flowMessageItem{"MPLS3Label", fmt.Sprintf("%v", fmsg.MPLS3Label)})
-		case "MPLSLastTTL":
-			message = append(message, flowMessageItem{"MPLSLastTTL", fmt.Sprintf("%v", fmsg.MPLSLastTTL)})
-		case "MPLSLastLabel":
-			message = append(message, flowMessageItem{"MPLSLastLabel", fmt.Sprintf("%v", fmsg.MPLSLastLabel)})
-		case "HasPPP":
-			message = append(message, flowMessageItem{"HasPPP", fmt.Sprintf("%v", fmsg.HasPPP)})
-		case "PPPAddressControl":
-			message = append(message, flowMessageItem{"PPPAddressControl", fmt.Sprintf("%v", fmsg.PPPAddressControl)})
-		}
-	}
-
-	return message
-}
-
-func FlowMessageToString(fmsg *flowmessage.FlowMessage) string {
-	filteredMessage := flowMessageFiltered(fmsg)
-	message := make([]string, len(filteredMessage))
-	for i, m := range filteredMessage {
-		message[i] = m.Name + ":" + m.Value
-	}
-	return strings.Join(message, " ")
-}
-
 func FlowMessageToSquid(fmsg *flowmessage.FlowMessage) string {
 	srcmac := make([]byte, 8)
 	binary.BigEndian.PutUint64(srcmac, fmsg.SrcMac)
 	srcmac = srcmac[2:8]
-	message := fmt.Sprintf("%v %6v %v %v/- %v HEAD %v:%v %v FIRSTUP_PARENT/%v packet_netflow/%v", fmsg.TimeFlowStart, fmsg.TimeFlowEnd-fmsg.TimeFlowStart, net.IP(fmsg.DstAddr).String(), fmsg.Proto, fmsg.Bytes, net.IP(fmsg.SrcAddr).String(), fmsg.SrcPort, net.HardwareAddr(srcmac).String(), net.IP(fmsg.SamplerAddress), fmsg.DstPort)
-	return message
-}
+	var protocol string
 
-func FlowMessageToJSON(fmsg *flowmessage.FlowMessage) string {
-	filteredMessage := flowMessageFiltered(fmsg)
-	message := make([]string, len(filteredMessage))
-	for i, m := range filteredMessage {
-		message[i] = fmt.Sprintf("\"%s\":\"%s\"", m.Name, m.Value)
+	switch fmt.Sprintf("%v", fmsg.Proto) {
+	case "6":
+		protocol = "TCP_PACKET"
+	case "17":
+		protocol = "UDP_PACKET"
+	case "1":
+		protocol = "ICMP_PACKET"
+
+	default:
+		protocol = "OTHER_PACKET"
 	}
-	return "{" + strings.Join(message, ",") + "}"
+
+	message := fmt.Sprintf("%v.000 %6v %v %v/- %v HEAD %v:%v %v FIRSTUP_PARENT/%v packet_netflow/:%v ", fmsg.TimeFlowStart, fmsg.TimeFlowEnd-fmsg.TimeFlowStart, net.IP(fmsg.DstAddr).String(), protocol, fmsg.Bytes, net.IP(fmsg.SrcAddr).String(), fmsg.SrcPort, net.HardwareAddr(srcmac).String(), net.IP(fmsg.SamplerAddress), fmsg.DstPort)
+	return message
 }
 
 func UDPRoutine(name string, decodeFunc decoder.DecoderFunc, workers int, addr string, port int, sockReuse bool, logger Logger) error {
@@ -294,10 +142,10 @@ func UDPRoutine(name string, decodeFunc decoder.DecoderFunc, workers int, addr s
 
 	if sockReuse {
 		pconn, err := reuseport.ListenPacket("udp", addrUDP.String())
-		defer pconn.Close()
 		if err != nil {
 			return err
 		}
+		defer pconn.Close()
 		var ok bool
 		udpconn, ok = pconn.(*net.UDPConn)
 		if !ok {
@@ -305,10 +153,10 @@ func UDPRoutine(name string, decodeFunc decoder.DecoderFunc, workers int, addr s
 		}
 	} else {
 		udpconn, err = net.ListenUDP("udp", &addrUDP)
-		defer udpconn.Close()
 		if err != nil {
 			return err
 		}
+		defer udpconn.Close()
 	}
 
 	payload := make([]byte, 9000)
@@ -358,4 +206,146 @@ func UDPRoutine(name string, decodeFunc decoder.DecoderFunc, workers int, addr s
 			}).
 			Observe(float64(size))
 	}
+}
+
+func (s *DefaultSquidTransport) CheckForAllSubNet(ip string) bool {
+	for _, subNet := range s.SubNets {
+		ok, err := checkIP(subNet, ip)
+		if err != nil { // если ошибка, то следующая строка
+			log.Error("Error while determining the IP subnet address: ", err)
+			return false
+
+		}
+		if ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Получает на вход строку в виде лога Squid по-умолчанию
+// Фильтрует от лишних записей по вхождению строк из списка в конфиге
+func (s *DefaultSquidTransport) RemoveIgnoringLine(line string) string {
+	// if strings.Contains(line, ":3128 ") || strings.Contains(line, "192.168.65.155") {
+	// 	log.Error(line)
+	// }
+	for _, ignorItem := range s.IgnorList { //проходим по списку исключения,
+		if strings.Contains(line, ignorItem) { //если линия содержит хотя бы один объект из списка,
+			return "" // то мы её игнорируем и возвращаем ничего
+
+		}
+	}
+	return line
+
+}
+
+func checkIP(subnet, ip string) (bool, error) {
+	var (
+		maskSubnetTmpl, ipInt64, subnetInt64 int64
+		maskSubnet                           int
+		err                                  error
+	)
+	maskSubnetTmpl, err = inetAton(net.ParseIP("255.255.255.255"))
+	if err != nil {
+		return false, err
+	}
+	// переод маски /32 в int64
+	ipInt64, err = inetAton(net.ParseIP(ip))
+	if err != nil {
+		return false, err
+	}
+	maskSubnetArray := strings.Split(subnet, "/")                // разбиваю входные данные на подсеть и маску
+	subnetInt64, err = inetAton(net.ParseIP(maskSubnetArray[0])) // подсеть в int64
+	if err != nil {
+		return false, err
+	}
+	// maskSubnetStr := strings.Split(subnet, "/")[1] //
+	maskSubnet, err = strconv.Atoi(maskSubnetArray[1]) // маска в виде Int для проведения битового сдвига
+	if err != nil {
+		return false, err
+	}
+	maskSubnetBytes := maskSubnetTmpl << (32 - maskSubnet) // сдвигаю маску /32 на оставшееся количество бит после маски
+	if subnetInt64 == (ipInt64 & maskSubnetBytes) {        // Проверка на хождение в подсеть IP-адреса
+		return true, nil
+	}
+	return false, nil
+}
+
+// Convert net.IP to int64
+// https://groups.google.com/forum/#!topic/golang-nuts/v4eJ5HK3stI
+func inetAton(ipnr net.IP) (int64, error) {
+	bits := strings.Split(ipnr.String(), ".")
+	var (
+		b0, b1, b2, b3 int
+		err            error
+	)
+	b0, err = strconv.Atoi(bits[0])
+	if err != nil {
+		return int64(0), err
+	}
+	b1, err = strconv.Atoi(bits[1])
+	if err != nil {
+		return int64(0), err
+	}
+	b2, err = strconv.Atoi(bits[2])
+	if err != nil {
+		return int64(0), err
+	}
+	b3, err = strconv.Atoi(bits[3])
+	if err != nil {
+		return int64(0), err
+	}
+
+	var sum int64
+
+	sum += int64(b0) << 24
+	sum += int64(b1) << 16
+	sum += int64(b2) << 8
+	sum += int64(b3)
+
+	return sum, nil
+}
+
+func (s *DefaultSquidTransport) LogFileFiltering(line string) string {
+	var destIP, destPort, srcPort string
+	valueArray := strings.Fields(line) // разбиваем на поля через пробел
+	if len(valueArray) == 0 {          // проверяем длину строки, чтобы убедиться что строка нормально распарсилась\её формат
+		return "" // если это не так то возвращаем ничего
+	}
+
+	srcIP := valueArray[2]
+	srcPortStr := valueArray[9]
+	destIPPort := valueArray[6]
+	if len(strings.Split(srcPortStr, "/")) >= 2 {
+		srcPort = strings.Split(srcPortStr, "/")[1]
+	} else {
+		srcPort = "-"
+	}
+	if len(strings.Split(destIPPort, ":")) >= 2 {
+		destIP = strings.Split(destIPPort, ":")[0]
+		destPort = strings.Split(destIPPort, ":")[1]
+	} else {
+		destIP = destIPPort
+	}
+	ok := s.CheckForAllSubNet(srcIP)
+	ok2 := s.CheckForAllSubNet(destIP)
+
+	if !ok { // если адрес не принадлежит необходимой подсети
+		if *s.ProcessingDirection == "both" { // если трафик считается в оба направления,
+			if ok2 { // если адрес назначения не входит указанные подсети
+				newSrcPortStr := strings.Split(valueArray[9], "/")[0] + "_inverse/:" + destPort
+				line = fmt.Sprintf("%v %6v %v %v %v %v %v%v %v %v %v ", valueArray[0], valueArray[1], destIP, valueArray[3], valueArray[4], valueArray[5], srcIP, srcPort, valueArray[7], valueArray[8], newSrcPortStr)
+
+				return line
+			}
+		}
+		return ""
+
+	} else if !ok2 {
+		return line
+
+	}
+
+	return ""
 }
