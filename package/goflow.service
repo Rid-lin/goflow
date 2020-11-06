@@ -3,9 +3,14 @@ Description=GoFlow
 After=network.target
 
 [Service]
-Type=simple
-EnvironmentFile=/etc/default/goflow
-ExecStart=/usr/bin/goflow $GOFLOW_ARGS
+ExecStart=/usr/bin/goflow
+Type=idle
+KillMode=process
+ 
+SyslogIdentifier=smart-test
+SyslogFacility=daemon
+ 
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
