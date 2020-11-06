@@ -12,6 +12,7 @@ import (
 	flowmessage "github.com/cloudflare/goflow/v3/pb"
 	"github.com/cloudflare/goflow/v3/producer"
 	"github.com/prometheus/client_golang/prometheus"
+	log "github.com/sirupsen/logrus"
 )
 
 type TemplateSystem struct {
@@ -213,6 +214,9 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 			}
 		}
 		flowMessageSet, err = producer.ProcessMessageNetFlow(msgDecConv, sampling)
+		if err != nil {
+			log.Warningf("Error : %v", err)
+		}
 
 		for _, fmsg := range flowMessageSet {
 			fmsg.TimeReceived = ts
@@ -306,6 +310,9 @@ func (s *StateNetFlow) DecodeFlow(msg interface{}) error {
 			}
 		}
 		flowMessageSet, err = producer.ProcessMessageNetFlow(msgDecConv, sampling)
+		if err != nil {
+			log.Warningf("Error : %v", err)
+		}
 
 		for _, fmsg := range flowMessageSet {
 			fmsg.TimeReceived = ts
@@ -343,7 +350,11 @@ func (s *StateNetFlow) ServeHTTPTemplates(w http.ResponseWriter, r *http.Request
 	}
 	s.templateslock.RUnlock()
 	enc := json.NewEncoder(w)
-	enc.Encode(tmp)
+	err := enc.Encode(tmp)
+	if err != nil {
+		log.Warningf("Error : %v", err)
+	}
+
 }
 
 func (s *StateNetFlow) InitTemplates() {

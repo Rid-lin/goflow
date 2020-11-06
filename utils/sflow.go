@@ -9,6 +9,7 @@ import (
 	flowmessage "github.com/cloudflare/goflow/v3/pb"
 	"github.com/cloudflare/goflow/v3/producer"
 	"github.com/prometheus/client_golang/prometheus"
+	log "github.com/sirupsen/logrus"
 )
 
 type StateSFlow struct {
@@ -116,6 +117,9 @@ func (s *StateSFlow) DecodeFlow(msg interface{}) error {
 
 	var flowMessageSet []*flowmessage.FlowMessage
 	flowMessageSet, err = producer.ProcessMessageSFlowConfig(msgDec, s.Config)
+	if err != nil {
+		log.Warningf("Error : %v", err)
+	}
 
 	timeTrackStop := time.Now()
 	DecoderTime.With(

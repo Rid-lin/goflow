@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
@@ -31,16 +32,19 @@ type Config struct {
 	FlowPort            int        `yaml:"FlowPort" toml:"flowport" env:"FLOW_PORT" env-default:"2055"`
 	ReuseFlowPort       bool       `yaml:"ReuseFlowPort" toml:"reuseflowport" env:"REUSE_FLOW_PORT"`
 	FlowWorkers         int        `yaml:"FlowWorkers" toml:"flowworkers" env:"FLOW_WORKERS" env-default:"1"`
+	NameFileToLog       string     `yaml:"FileToLog" toml:"log" env:"FLOW_LOG"`
 }
 
 var (
 	cfg                Config
 	SubNets, IgnorList arrayFlags
-	version            = ""
-	buildinfos         = ""
-	AppVersion         = "GoFlow NetFlow " + version + " " + buildinfos
+	writer             *bufio.Writer
+	FileToLog          *os.File
+	err                error
 
-	// ProcessingDirection = flag.String("direct", "both", "")
+	version    = ""
+	buildinfos = ""
+	AppVersion = "GoFlow NetFlow " + version + " " + buildinfos
 
 	Version = flag.Bool("v", false, "Print version")
 )
@@ -54,9 +58,11 @@ func init() {
 	flag.Var(&cfg.SubNets, "subnet", "List of internal subnets")
 	flag.Var(&cfg.IgnorList, "ignorlist", "List of ignored words/parameters per string")
 	flag.StringVar(&cfg.ProcessingDirection, "direct", "both", "")
+	flag.StringVar(&cfg.NameFileToLog, "log", "", "The file where logs will be written in the format of squid logs")
 	flag.Parse()
 	var config_source string
 	if SubNets == nil && IgnorList == nil {
+		// err := cleanenv.ReadConfig("goflow.toml", &cfg)
 		err := cleanenv.ReadConfig("/etc/goflow/goflow.toml", &cfg)
 		if err != nil {
 			log.Warningf("No .env file found: %v", err)
@@ -86,12 +92,30 @@ func init() {
 
 func main() {
 
+	if cfg.NameFileToLog == "" {
+		writer = bufio.NewWriter(os.Stdout)
+		log.Debug("Output in os.Stdout")
+	} else {
+		FileToLog, err = os.Create(cfg.NameFileToLog)
+		if err != nil {
+			log.Errorf("Error, the '%v' file could not be created (there are not enough premissions or it is busy with another program): %v", cfg.NameFileToLog, err)
+			writer = bufio.NewWriter(os.Stdout)
+			FileToLog.Close()
+			log.Debug("Output in os.Stdout with error open file")
+		} else {
+			defer FileToLog.Close()
+			writer = bufio.NewWriter(FileToLog)
+			log.Debugf("Output in file (%v)(%v)", cfg.NameFileToLog, FileToLog)
+		}
+	}
+
 	if *Version {
 		fmt.Println(AppVersion)
 		os.Exit(0)
 	}
 
 	var defaultTransport = &utils.DefaultSquidTransport{}
+	defaultTransport.Writer = writer
 	defaultTransport.IgnorList = cfg.IgnorList
 	defaultTransport.SubNets = cfg.SubNets
 	defaultTransport.ProcessingDirection = &cfg.ProcessingDirection

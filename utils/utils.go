@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bufio"
 	"encoding/binary"
 	"flag"
 	"fmt"
@@ -62,6 +63,7 @@ type Transport interface {
 }
 
 type DefaultSquidTransport struct {
+	Writer              *bufio.Writer
 	SubNets             []string
 	IgnorList           []string
 	ProcessingDirection *string
@@ -79,7 +81,7 @@ func (s *DefaultSquidTransport) Publish(msgs []*flowmessage.FlowMessage) {
 		if message == "" {
 			continue
 		}
-		fmt.Printf("%v\n", message)
+		fmt.Fprintf(s.Writer, "%v\n", message)
 	}
 }
 
