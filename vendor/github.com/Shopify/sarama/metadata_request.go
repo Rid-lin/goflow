@@ -10,7 +10,7 @@ func (r *MetadataRequest) encode(pe packetEncoder) error {
 	if r.Version < 0 || r.Version > 5 {
 		return PacketEncodingError{"invalid or unsupported MetadataRequest version field"}
 	}
-	if r.Version == 0 || r.Version == 5 || len(r.Topics) > 0 {
+	if r.Version == 0 || len(r.Topics) > 0 {
 		err := pe.putArrayLength(len(r.Topics))
 		if err != nil {
 			return err
@@ -63,6 +63,10 @@ func (r *MetadataRequest) key() int16 {
 
 func (r *MetadataRequest) version() int16 {
 	return r.Version
+}
+
+func (r *MetadataRequest) headerVersion() int16 {
+	return 1
 }
 
 func (r *MetadataRequest) requiredVersion() KafkaVersion {
