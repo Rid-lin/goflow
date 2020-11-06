@@ -23,7 +23,7 @@ buildwithoutdebug:
 	go build $(LDFLAGS) -o build/$(PROJECTNAME)_$(TAG).exe -v ./
 
 buildwodebug_linux:
-	set GOOS=linux&& go build $(LDFLAGS) -o build/$(PROJECTNAME)_$(TAG) -v ./cmd/cnetflow/
+	set GOOS=linux&&go build $(LDFLAGS) -o build/$(PROJECTNAME)_$(TAG) -v ./cmd/cnetflow/
 
 buildwithoutdebug_linux:
 	@set GOARCH=$(GOARCH)&&set GOOS=$(GOOS)

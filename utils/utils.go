@@ -72,7 +72,6 @@ type DefaultSquidTransport struct {
 func (s *DefaultSquidTransport) Publish(msgs []*flowmessage.FlowMessage) {
 	for _, msg := range msgs {
 		message := FlowMessageToSquid(msg)
-		// s.CheckForAllSubNet(net.IP(msg.DstAddr).String())
 		message = s.RemoveIgnoringLine(message)
 		if message == "" {
 			continue
@@ -214,7 +213,7 @@ func (s *DefaultSquidTransport) CheckForAllSubNet(ip string) bool {
 	for _, subNet := range s.SubNets {
 		ok, err := checkIP(subNet, ip)
 		if err != nil { // если ошибка, то следующая строка
-			log.Error("Error while determining the IP subnet address: ", err)
+			log.Error("Error while determining the IP subnet address:", err)
 			return false
 
 		}
@@ -243,71 +242,82 @@ func (s *DefaultSquidTransport) RemoveIgnoringLine(line string) string {
 }
 
 func checkIP(subnet, ip string) (bool, error) {
-	var (
-		maskSubnetTmpl, ipInt64, subnetInt64 int64
-		maskSubnet                           int
-		err                                  error
-	)
-	maskSubnetTmpl, err = inetAton(net.ParseIP("255.255.255.255"))
+	_, netA, err := net.ParseCIDR(subnet)
 	if err != nil {
 		return false, err
 	}
-	// переод маски /32 в int64
-	ipInt64, err = inetAton(net.ParseIP(ip))
-	if err != nil {
-		return false, err
-	}
-	maskSubnetArray := strings.Split(subnet, "/")                // разбиваю входные данные на подсеть и маску
-	subnetInt64, err = inetAton(net.ParseIP(maskSubnetArray[0])) // подсеть в int64
-	if err != nil {
-		return false, err
-	}
-	// maskSubnetStr := strings.Split(subnet, "/")[1] //
-	maskSubnet, err = strconv.Atoi(maskSubnetArray[1]) // маска в виде Int для проведения битового сдвига
-	if err != nil {
-		return false, err
-	}
-	maskSubnetBytes := maskSubnetTmpl << (32 - maskSubnet) // сдвигаю маску /32 на оставшееся количество бит после маски
-	if subnetInt64 == (ipInt64 & maskSubnetBytes) {        // Проверка на хождение в подсеть IP-адреса
-		return true, nil
-	}
-	return false, nil
+	// convert string to IP
+	ipv4addr := net.ParseIP(ip)
+
+	return netA.Contains(ipv4addr), nil
 }
+
+// func checkIP(subnet, ip string) (bool, error) {
+// 	var (
+// 		maskSubnetTmpl, ipInt64, subnetInt64 int64
+// 		maskSubnet                           int
+// 		err                                  error
+// 	)
+// 	maskSubnetTmpl, err = inetAton(net.ParseIP("255.255.255.255"))
+// 	if err != nil {
+// 		return false, err
+// 	}
+// 	// переод маски /32 в int64
+// 	ipInt64, err = inetAton(net.ParseIP(ip))
+// 	if err != nil {
+// 		return false, err
+// 	}
+// 	maskSubnetArray := strings.Split(subnet, "/")                // разбиваю входные данные на подсеть и маску
+// 	subnetInt64, err = inetAton(net.ParseIP(maskSubnetArray[0])) // подсеть в int64
+// 	if err != nil {
+// 		return false, err
+// 	}
+// 	// maskSubnetStr := strings.Split(subnet, "/")[1] //
+// 	maskSubnet, err = strconv.Atoi(maskSubnetArray[1]) // маска в виде Int для проведения битового сдвига
+// 	if err != nil {
+// 		return false, err
+// 	}
+// 	maskSubnetBytes := maskSubnetTmpl << (32 - maskSubnet) // сдвигаю маску /32 на оставшееся количество бит после маски
+// 	if subnetInt64 == (ipInt64 & maskSubnetBytes) {        // Проверка на хождение в подсеть IP-адреса
+// 		return true, nil
+// 	}
+// 	return false, nil
+// }
 
 // Convert net.IP to int64
 // https://groups.google.com/forum/#!topic/golang-nuts/v4eJ5HK3stI
-func inetAton(ipnr net.IP) (int64, error) {
-	bits := strings.Split(ipnr.String(), ".")
-	var (
-		b0, b1, b2, b3 int
-		err            error
-	)
-	b0, err = strconv.Atoi(bits[0])
-	if err != nil {
-		return int64(0), err
-	}
-	b1, err = strconv.Atoi(bits[1])
-	if err != nil {
-		return int64(0), err
-	}
-	b2, err = strconv.Atoi(bits[2])
-	if err != nil {
-		return int64(0), err
-	}
-	b3, err = strconv.Atoi(bits[3])
-	if err != nil {
-		return int64(0), err
-	}
+// func inetAton(ipnr net.IP) (int64, error) {
+// 	bits := strings.Split(ipnr.String(), ".")
+// 	var (
+// 		b0, b1, b2, b3 int
+// 		err            error
+// 	)
+// 	b0, err = strconv.Atoi(bits[0])
+// 	if err != nil {
+// 		return int64(0), err
+// 	}
+// 	b1, err = strconv.Atoi(bits[1])
+// 	if err != nil {
+// 		return int64(0), err
+// 	}
+// 	b2, err = strconv.Atoi(bits[2])
+// 	if err != nil {
+// 		return int64(0), err
+// 	}
+// 	b3, err = strconv.Atoi(bits[3])
+// 	if err != nil {
+// 		return int64(0), err
+// 	}
 
-	var sum int64
+// 	var sum int64
 
-	sum += int64(b0) << 24
-	sum += int64(b1) << 16
-	sum += int64(b2) << 8
-	sum += int64(b3)
+// 	sum += int64(b0) << 24
+// 	sum += int64(b1) << 16
+// 	sum += int64(b2) << 8
+// 	sum += int64(b3)
 
-	return sum, nil
-}
+// 	return sum, nil
+// }
 
 func (s *DefaultSquidTransport) LogFileFiltering(line string) string {
 	var destIP, destPort, srcPort string
