@@ -64,7 +64,7 @@ github.com/stretchr/testify/assert
 # golang.org/x/net v0.0.0-20190404232315-eb5bcb51f2a3
 golang.org/x/net/internal/socks
 golang.org/x/net/proxy
-# golang.org/x/sys v0.0.0-20190403152447-81d4e9dc473e
+# golang.org/x/sys v0.0.0-20190813064441-fde4db37ae7a
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry

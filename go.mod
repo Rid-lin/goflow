@@ -13,5 +13,6 @@ require (
 	github.com/prometheus/common v0.0.0-20181126121408-4724e9255275
 	github.com/sirupsen/logrus v1.4.1
 	github.com/stretchr/testify v1.4.0
+	golang.org/x/sys v0.0.0-20190813064441-fde4db37ae7a // indirect
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6 // indirect
 )
