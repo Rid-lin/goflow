@@ -6,7 +6,8 @@ GOOS := linux
 GOARCH := amd64
 TAG := $(VERSION)_$(GOOS)_$(GOARCH)
 PLATFORMS=darwin linux windows
-ARCHITECTURES=386 amd64
+#ARCHITECTURES=386 amd64
+ARCHITECTURES=amd64
 
 # Use linker flags to provide version/build settings
 # LDFLAGS=-ldflags "-w -s -X=main.Version=$(VERSION) -X=main.Build=$(BUILD)"

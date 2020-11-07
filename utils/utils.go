@@ -99,8 +99,11 @@ func (cb *DefaultErrorCallback) Callback(name string, id int, start, end time.Ti
 
 func FlowMessageToSquid(fmsg *flowmessage.FlowMessage) string {
 	srcmac := make([]byte, 8)
+	dstmac := make([]byte, 8)
 	binary.BigEndian.PutUint64(srcmac, fmsg.SrcMac)
+	binary.BigEndian.PutUint64(dstmac, fmsg.DstMac)
 	srcmac = srcmac[2:8]
+	dstmac = dstmac[2:8]
 	var protocol string
 
 	switch fmt.Sprintf("%v", fmsg.Proto) {
@@ -115,7 +118,18 @@ func FlowMessageToSquid(fmsg *flowmessage.FlowMessage) string {
 		protocol = "OTHER_PACKET"
 	}
 
-	message := fmt.Sprintf("%v.000 %6v %v %v/- %v HEAD %v:%v %v FIRSTUP_PARENT/%v packet_netflow/:%v ", fmsg.TimeFlowStart, fmsg.TimeFlowEnd-fmsg.TimeFlowStart, net.IP(fmsg.DstAddr).String(), protocol, fmsg.Bytes, net.IP(fmsg.SrcAddr).String(), fmsg.SrcPort, net.HardwareAddr(srcmac).String(), net.IP(fmsg.SamplerAddress), fmsg.DstPort)
+	message := fmt.Sprintf("%v.000 %6v %v %v/- %v HEAD %v:%v %v FIRSTUP_PARENT/%v packet_netflow/%v/:%v ",
+		fmsg.TimeFlowStart,                  // time
+		fmsg.TimeFlowEnd-fmsg.TimeFlowStart, //delay
+		net.IP(fmsg.DstAddr).String(),       // dst ip
+		protocol,                            // protocol
+		fmsg.Bytes,                          // size
+		net.IP(fmsg.SrcAddr).String(),       //src ip
+		fmsg.SrcPort,                        // src port
+		net.HardwareAddr(srcmac).String(),   // srcmac
+		net.IP(fmsg.SamplerAddress),         // routerIP
+		net.HardwareAddr(dstmac).String(),   //dstmac
+		fmsg.DstPort)                        //dstport
 	return message
 }
 
@@ -250,41 +264,85 @@ func checkIP(subnet, ip string) (bool, error) {
 }
 
 func (s *DefaultSquidTransport) LogFileFiltering(line string) string {
-	var destIP, destPort, srcPort string
+	var srcIP, srcPort, dstPort string
 	valueArray := strings.Fields(line) // разбиваем на поля через пробел
 	if len(valueArray) == 0 {          // проверяем длину строки, чтобы убедиться что строка нормально распарсилась\её формат
 		return "" // если это не так то возвращаем ничего
 	}
 
-	srcIP := valueArray[2]
-	srcPortStr := valueArray[9]
-	destIPPort := valueArray[6]
-	if len(strings.Split(srcPortStr, "/")) >= 2 {
-		srcPort = strings.Split(srcPortStr, "/")[1]
+	dstIP := valueArray[2]
+	dstPortStr := valueArray[9]
+	srcIPPort := valueArray[6]
+	if len(strings.Split(dstPortStr, "/")) >= 3 {
+		dstPort = strings.Split(dstPortStr, "/")[2]
 	} else {
-		srcPort = "-"
+		dstPort = "-"
 	}
-	if len(strings.Split(destIPPort, ":")) >= 2 {
-		destIP = strings.Split(destIPPort, ":")[0]
-		destPort = strings.Split(destIPPort, ":")[1]
+	if len(strings.Split(srcIPPort, ":")) >= 2 {
+		srcIP = strings.Split(srcIPPort, ":")[0]
+		srcPort = strings.Split(srcIPPort, ":")[1]
 	} else {
-		destIP = destIPPort
+		srcIP = srcIPPort
 	}
-	ok := s.CheckForAllSubNet(srcIP)
-	ok2 := s.CheckForAllSubNet(destIP)
+	timestamp := valueArray[0]
+	delay := valueArray[1]
+	protocol := valueArray[3]
+	size := valueArray[4]
+	typeOfResponse := valueArray[5]
+	user := valueArray[7]
+	parent := strings.Split(valueArray[8], "/")[1]
+	mime := valueArray[9]
 
-	if !ok { // если адрес не принадлежит необходимой подсети
+	ok := s.CheckForAllSubNet(dstIP)
+	ok2 := s.CheckForAllSubNet(srcIP)
+
+	if !ok { // если адрес назначения не принадлежит необходимой подсети
 		if *s.ProcessingDirection == "both" { // если трафик считается в оба направления,
-			if ok2 { // если адрес назначения не входит указанные подсети
-				newSrcPortStr := strings.Split(valueArray[9], "/")[0] + "_inverse/:" + destPort
-				line = fmt.Sprintf("%v %6v %v %v %v %v %v%v %v %v %v ", valueArray[0], valueArray[1], destIP, valueArray[3], valueArray[4], valueArray[5], srcIP, srcPort, valueArray[7], valueArray[8], newSrcPortStr)
+			if ok2 && srcIP != parent && dstIP != parent { // если адрес источника не принадлежит внутренним подсетям, то мы меням адреса источника и назначения
+				newMac := strings.Split(valueArray[9], "/")[1]
+				newSrcPortStr := strings.Split(valueArray[9], "/")[0] + "_inverse/" + valueArray[7] + "/:" + srcPort
+				line = fmt.Sprintf("%v %6v %v %v %v %v %v%v %v %v %v ",
+					valueArray[0], // time
+					valueArray[1], // delay
+					srcIP,         // dest ip
+					valueArray[3], // TCP_PACKET/-
+					valueArray[4], // size
+					valueArray[5], // HEAD
+					dstIP,         // Src ip
+					dstPort,       // src port
+					newMac,        // user
+					valueArray[8], // FIRSTUP_PARENT/192.168.65.254
+					newSrcPortStr) // packet_netflow_inverse/srcmac/srcport
 
 				return line
 			}
 		}
 		return ""
 
-	} else if !ok2 {
+	} else if !ok2 { // если адерс назначения принадлежит внутренним сетям, а адрес источника нет, то отправляем строку как она есть
+		if dstIP == parent {
+			return ""
+
+		}
+		return line
+
+	} else if dstIP == parent { // если адрес srcip и dstip принадлежат внутренним подсетям, то проверяем, не является ли dstip нашим коммутатором. Если является, то меняем местами desip и srcip и пишем в историю
+		newMac := strings.Split(mime, "/")[1]
+		newSrcPortStr := strings.Split(valueArray[9], "/")[0] + "_inverse/" + user + "/:" + srcPort
+		line = fmt.Sprintf("%v %6v %v %v %v %v %v%v %v %v %v ",
+			timestamp,      // time
+			delay,          // delay
+			srcIP,          // dest ip
+			protocol,       // TCP_PACKET/-
+			size,           // size
+			typeOfResponse, // HEAD
+			dstIP,          // Src ip
+			dstPort,        // src port
+			newMac,         // user
+			valueArray[8],  // FIRSTUP_PARENT/192.168.65.254
+			newSrcPortStr)  // packet_netflow_inverse/srcmac/srcport
+
+	} else if srcIP == parent { // если адрес srcip и dstip принадлежат внутренним подсетям, то проверяем, не является ли scrip нашим коммутатором. Если является, то пишем в историю
 		return line
 
 	}
