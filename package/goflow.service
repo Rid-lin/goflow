@@ -3,13 +3,18 @@ Description=GoFlow
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/goflow
-Type=idle
+ExecStart=/sbin/start-stop-daemon -Sbvmp /var/run/goflow.pid -x /usr/bin/goflow/goflow
+ExecStop=/sbin/start-stop-daemon -Kvp /var/run/goflow.pid
+PIDFile=/var/run/goflow.pid
+Type=forking
 KillMode=process
- 
-SyslogIdentifier=smart-test
+
+User=proxy
+Group=proxy
+
+SyslogIdentifier=goflow
 SyslogFacility=daemon
- 
+
 Restart=on-failure
 
 [Install]
