@@ -96,7 +96,8 @@ func main() {
 		writer = bufio.NewWriter(os.Stdout)
 		log.Debug("Output in os.Stdout")
 	} else {
-		FileToLog, err = os.Create(cfg.NameFileToLog)
+		FileToLog, err = os.OpenFile(cfg.NameFileToLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		// FileToLog, err = os.Create(cfg.NameFileToLog)
 		if err != nil {
 			log.Errorf("Error, the '%v' file could not be created (there are not enough premissions or it is busy with another program): %v", cfg.NameFileToLog, err)
 			writer = bufio.NewWriter(os.Stdout)
