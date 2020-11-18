@@ -15,6 +15,9 @@ LDFLAGS=-ldflags "-w -s"
 
 .PHONY: build
 
+clean:
+	rm build/$(PROJECTNAME)_*
+
 build: buildwithoutdebug_linux pack
 
 buildfordebug:
@@ -24,15 +27,15 @@ buildwithoutdebug:
 	go build $(LDFLAGS) -o build/$(PROJECTNAME)_$(TAG).exe -v ./
 
 buildwodebug_linux:
-	set GOOS=linux&&go build $(LDFLAGS) -o build/$(PROJECTNAME)_$(TAG) -v ./cmd/cnetflow/
+	set GOOS=linux&&go build $(LDFLAGS) -o build/$(PROJECTNAME)_$(TAG) -v ./cmd/
 
 buildwithoutdebug_linux:
 	@set GOARCH=$(GOARCH)&&set GOOS=$(GOOS)
-	@go build $(LDFLAGS) -o build/$(PROJECTNAME)_$(VERSION)_$(GOOS)_$(GOARCH) -v ./cmd/cnetflow/
+	@go build $(LDFLAGS) -o build/$(PROJECTNAME)_$(VERSION)_$(GOOS)_$(GOARCH) -v ./cmd/
 
 prebuild_all:
 	$(foreach GOOS, $(PLATFORMS),\
-	$(foreach GOARCH, $(ARCHITECTURES), $(shell export GOOS=$(GOOS); export GOARCH=$(GOARCH); go build -v $(LDFLAGS) -o build/$(PROJECTNAME)_$(VERSION)_$(GOOS)_$(GOARCH) -v ./cmd/cnetflow/)))
+	$(foreach GOARCH, $(ARCHITECTURES), $(shell export GOOS=$(GOOS); export GOARCH=$(GOARCH); go build -v $(LDFLAGS) -o build/$(PROJECTNAME)_$(VERSION)_$(GOOS)_$(GOARCH) -v ./cmd/)))
 
 build_all: prebuild_all pack
 
@@ -42,7 +45,7 @@ run: build
 .DUFAULT_GOAL := build
 
 pack:
-	upx --ultra-brute build/$(PROJECTNAME)*
+	upx --ultra-brute build/$(PROJECTNAME)_*
 
 mod:
 	go mod tidy
