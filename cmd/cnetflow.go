@@ -136,32 +136,11 @@ func main() {
 		"Type": "NetFlow"}).
 		Infof("Listening on UDP %v:%v", cfg.FlowAddr, cfg.FlowPort)
 
-		// stop := make(chan os.Signal, 1)
-		// stop := getFireSignalsChannel()
-
-		// go func() {
-		// 	signal.Notify(stop, os.Interrupt)
-		// 	for range stop {
-		// 		log.Print("Shutting down inside")
-		// 		FileToLog.Sync()
-		// 		log.Print("File sync to disk")
-		// 		FileToLog.Close()
-		// 		log.Print("File Close")
-		// 		os.Exit(0)
-		// 	}
-		// 	fmt.Fprintf(defaultTransport.Writer, "\n")
-		// 	FileToLog.Sync()
-		// 	FileToLog.Close()
-		// 	log.Print("Shutting down")
-		// 	os.Exit(0)
-
-		// }()
 	exitChan := getExitSignalsChannel()
 
 	go func() {
 		<-exitChan
-		fmt.Fprintf(defaultTransport.Writer, "\n")
-		FileToLog.Sync()
+		writer.Flush()
 		FileToLog.Close()
 		log.Println("Shutting down")
 		os.Exit(0)
@@ -182,13 +161,9 @@ func getExitSignalsChannel() chan os.Signal {
 		syscall.SIGTERM, // "the normal way to politely ask a program to terminate"
 		syscall.SIGINT,  // Ctrl+C
 		syscall.SIGQUIT, // Ctrl-\
-		syscall.SIGKILL, // "always fatal", "SIGKILL and SIGSTOP may not be caught by a program"
-		syscall.SIGHUP,  // "terminal is disconnected"
+		// syscall.SIGKILL, // "always fatal", "SIGKILL and SIGSTOP may not be caught by a program"
+		syscall.SIGHUP, // "terminal is disconnected"
 	)
 	return c
 
 }
-
-// func exit() {
-// 	syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
-// }
