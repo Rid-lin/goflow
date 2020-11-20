@@ -45,12 +45,12 @@ build_win:
 prebuild_win:
 	$(shell export GOOS=windows; export GOARCH=$(GOARCH); go build -v $(LDFLAGS) -o build/$(PROJECTNAME)_$(VERSION)_$(BUILD)_windows_$(GOARCH).exe -v ./cmd/)
 	
-prebuild_all:
+build_all:
 	$(foreach GOOS, $(PLATFORMS),\
 	$(foreach GOARCH, $(ARCHITECTURES), $(shell export GOOS=$(GOOS); export GOARCH=$(GOARCH); go build -v $(LDFLAGS) -o build/$(PROJECTNAME)__$(VERSION)_$(BUILD)_$(GOOS)_$(GOARCH) -v ./cmd/)))
 #	$(shell rm build/$(PROJECTNAME)_$(VERSION)_windows_$(GOARCH) build/$(PROJECTNAME)_$(VERSION)_windows_$(GOARCH).exe)
 
-build_all: prebuild_all pack
+build_pack_all: build_all pack
 
 run: build_win
 	build/$(PROJECTNAME)_$(VERSION)_$(BUILD)_$(GOOS)_$(GOARCH).exe
