@@ -84,7 +84,7 @@ func (s *DefaultSquidTransport) Publish(msgs []*flowmessage.FlowMessage) {
 		if message == "" {
 			continue
 		}
-		fmt.Fprintf(s.Writer, "%v\n", message)
+		fmt.Fprintf(s.Writer, "\n%v", message)
 	}
 }
 

@@ -5,7 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"runtime"
+	"syscall"
 
 	"github.com/cloudflare/goflow/v3/utils"
 	"github.com/ilyakaznacheev/cleanenv"
@@ -63,7 +65,7 @@ func init() {
 	var config_source string
 	if SubNets == nil && IgnorList == nil {
 		// err := cleanenv.ReadConfig("goflow.toml", &cfg)
-		err := cleanenv.ReadConfig("/etc/goflow/goflow.toml", &cfg)
+		err := cleanenv.ReadConfig("goflow.toml", &cfg)
 		if err != nil {
 			log.Warningf("No .env file found: %v", err)
 		}
@@ -134,8 +136,54 @@ func main() {
 		"Type": "NetFlow"}).
 		Infof("Listening on UDP %v:%v", cfg.FlowAddr, cfg.FlowPort)
 
+	// stop := make(chan os.Signal, 1)
+
+	// go func() {
+	// 	signal.Notify(stop, os.Interrupt)
+	// 	for range stop {
+	// 		log.Print("Shutting down inside")
+	// 	}
+	// 	fmt.Fprintf(defaultTransport.Writer, "\n")
+	// 	FileToLog.Close()
+	// 	log.Print("Shutting down")
+	// 	os.Exit(0)
+
+	// }()
+
+	go func() {
+		exitChan := getFireSignalsChannel()
+		<-exitChan
+		fmt.Fprintf(defaultTransport.Writer, "\n")
+		FileToLog.Close()
+		log.Println("Shutting down")
+
+		os.Exit(0)
+		// All main deferreds executed here even in case of panic.
+		// Non-main deferreds are not executed here.
+
+	}()
+
 	err := s.FlowRoutine(cfg.FlowWorkers, cfg.FlowAddr, cfg.FlowPort, cfg.ReuseFlowPort)
 	if err != nil {
 		log.Fatalf("Fatal error: could not listen to UDP (%v)", err)
 	}
 }
+
+func getFireSignalsChannel() chan os.Signal {
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c,
+		// https://www.gnu.org/software/libc/manual/html_node/Termination-Signals.html
+		syscall.SIGTERM, // "the normal way to politely ask a program to terminate"
+		syscall.SIGINT,  // Ctrl+C
+		syscall.SIGQUIT, // Ctrl-\
+		syscall.SIGKILL, // "always fatal", "SIGKILL and SIGSTOP may not be caught by a program"
+		syscall.SIGHUP,  // "terminal is disconnected"
+	)
+	return c
+
+}
+
+// func exit() {
+// 	syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
+// }
