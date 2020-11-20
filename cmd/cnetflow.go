@@ -65,7 +65,7 @@ func init() {
 	var config_source string
 	if SubNets == nil && IgnorList == nil {
 		// err := cleanenv.ReadConfig("goflow.toml", &cfg)
-		err := cleanenv.ReadConfig("goflow.toml", &cfg)
+		err := cleanenv.ReadConfig("/etc/goflow/goflow.toml", &cfg)
 		if err != nil {
 			log.Warningf("No .env file found: %v", err)
 		}
@@ -136,30 +136,35 @@ func main() {
 		"Type": "NetFlow"}).
 		Infof("Listening on UDP %v:%v", cfg.FlowAddr, cfg.FlowPort)
 
-	// stop := make(chan os.Signal, 1)
+		// stop := make(chan os.Signal, 1)
+		// stop := getFireSignalsChannel()
 
-	// go func() {
-	// 	signal.Notify(stop, os.Interrupt)
-	// 	for range stop {
-	// 		log.Print("Shutting down inside")
-	// 	}
-	// 	fmt.Fprintf(defaultTransport.Writer, "\n")
-	// 	FileToLog.Close()
-	// 	log.Print("Shutting down")
-	// 	os.Exit(0)
+		// go func() {
+		// 	signal.Notify(stop, os.Interrupt)
+		// 	for range stop {
+		// 		log.Print("Shutting down inside")
+		// 		FileToLog.Sync()
+		// 		log.Print("File sync to disk")
+		// 		FileToLog.Close()
+		// 		log.Print("File Close")
+		// 		os.Exit(0)
+		// 	}
+		// 	fmt.Fprintf(defaultTransport.Writer, "\n")
+		// 	FileToLog.Sync()
+		// 	FileToLog.Close()
+		// 	log.Print("Shutting down")
+		// 	os.Exit(0)
 
-	// }()
+		// }()
+	exitChan := getExitSignalsChannel()
 
 	go func() {
-		exitChan := getFireSignalsChannel()
 		<-exitChan
 		fmt.Fprintf(defaultTransport.Writer, "\n")
+		FileToLog.Sync()
 		FileToLog.Close()
 		log.Println("Shutting down")
-
 		os.Exit(0)
-		// All main deferreds executed here even in case of panic.
-		// Non-main deferreds are not executed here.
 
 	}()
 
@@ -169,7 +174,7 @@ func main() {
 	}
 }
 
-func getFireSignalsChannel() chan os.Signal {
+func getExitSignalsChannel() chan os.Signal {
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c,
