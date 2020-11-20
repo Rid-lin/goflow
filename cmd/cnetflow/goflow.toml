@@ -1,5 +1,0 @@
-subnets = ["192.168.0.0/24", "192.168.13.0/24", "192.168.65.0/24","10.61.152.0/24"]
-ignorlist = ["UDP_PACKET",":53 ",":3128 ","/3128 ",":123 ","/123 ","SrcIPaddress"]
-flowport = 9995
-loglevel = "debug"
-log = "/var/log/squid/access2.log"
